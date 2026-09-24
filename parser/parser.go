@@ -154,6 +154,9 @@ func ParseMJML(mjmlContent string) (*MJMLNode, error) {
 	// Keep ending-tag content as written, as MJML does
 	processedContent = wrapEndingTagContent(processedContent)
 
+	// Keep attribute values and the remaining text as written too
+	processedContent = escapeAmpersands(processedContent)
+
 	contentBytes := []byte(processedContent)
 	lookup := newLineLookup(contentBytes)
 
@@ -165,25 +168,14 @@ func ParseMJML(mjmlContent string) (*MJMLNode, error) {
 	return root, nil
 }
 
-// preprocessHTMLEntities replaces common HTML entities with Unicode characters
-// and properly escapes ampersands in attribute values. Raw ampersands are first
-// escaped to &amp; for XML safety, then most entities are replaced with Unicode.
-// The &amp; entities are left for the XML parser to handle, preventing re-introduction
-// of invalid raw ampersands that would break XML parsing.
+// preprocessHTMLEntities replaces common HTML entities that XML does not define
+// with the characters they stand for. The entities XML defines (&amp; &lt; &gt;
+// &quot; &apos;) are left for escapeAmpersands, so that escaped markup stays
+// escaped.
 func preprocessHTMLEntities(content string) string {
-	// First, escape raw ampersands in attribute values that aren't part of valid entities
-	result := escapeAttributeAmpersands(content)
-
-	// Replace the most common HTML entities with Unicode characters
-	// NOTE: &amp; entities are intentionally preserved - the XML parser will convert
-	// them to raw ampersands safely after parsing, maintaining XML validity.
-	result = strings.ReplaceAll(result, "&copy;", "©")
+	result := strings.ReplaceAll(content, "&copy;", "©")
 	result = strings.ReplaceAll(result, "&reg;", "®")
 	result = strings.ReplaceAll(result, "&trade;", "™")
-	result = strings.ReplaceAll(result, "&lt;", "<")
-	result = strings.ReplaceAll(result, "&gt;", ">")
-	result = strings.ReplaceAll(result, "&quot;", `"`)
-	result = strings.ReplaceAll(result, "&apos;", "'")
 	result = strings.ReplaceAll(result, "&nbsp;", "\u00A0") // Unicode non-breaking space
 	result = strings.ReplaceAll(result, "&#xA0;", "\u00A0") // Numeric character reference for non-breaking space
 	result = strings.ReplaceAll(result, "&#160;", "\u00A0") // Decimal numeric reference for non-breaking space
@@ -194,54 +186,33 @@ func preprocessHTMLEntities(content string) string {
 	return result
 }
 
-// escapeAttributeAmpersands escapes raw ampersands in XML attribute values
-// that aren't part of valid HTML entities. This prevents XML parsing errors
-// when URLs contain query parameters like "?param1=value1&param2=value2".
-func escapeAttributeAmpersands(content string) string {
+// escapeAmpersands escapes every & that the XML decoder would decode, so that
+// the decoder returns attribute values and text as written, as MJML keeps
+// them. CDATA sections, which hold the ending-tag content, comments,
+// declarations and processing instructions are copied unchanged.
+func escapeAmpersands(content string) string {
+	if strings.IndexByte(content, '&') < 0 {
+		return content
+	}
 	var out strings.Builder
-	out.Grow(len(content))
-
-	inTag := false
-	var quote byte
-
-	for i := 0; i < len(content); i++ {
-		c := content[i]
-		if quote != 0 {
-			if c == quote {
-				out.WriteByte(c)
-				quote = 0
-				continue
-			}
-			if c == '&' {
-				j := i + 1
-				for j < len(content) && content[j] != quote && !isEntityTerminator(content[j]) {
-					j++
-				}
-				if j < len(content) && content[j] == ';' && isValidEntity(content[i+1:j]) {
-					out.WriteString(content[i : j+1])
-					i = j
-				} else {
-					out.WriteString("&amp;")
-				}
-				continue
-			}
-			out.WriteByte(c)
+	out.Grow(len(content) + 64)
+	for i := 0; i < len(content); {
+		j := strings.IndexAny(content[i:], "&<")
+		if j < 0 {
+			out.WriteString(content[i:])
+			break
+		}
+		out.WriteString(content[i : i+j])
+		i += j
+		if content[i] == '&' {
+			out.WriteString("&amp;")
+			i++
 			continue
 		}
-
-		switch c {
-		case '<':
-			inTag = true
-		case '>':
-			inTag = false
-		case '\'', '"':
-			if inTag {
-				quote = c
-			}
-		}
-		out.WriteByte(c)
+		end := max(skipMarkupDeclaration(content, i), i+1)
+		out.WriteString(content[i:end])
+		i = end
 	}
-
 	return out.String()
 }
 

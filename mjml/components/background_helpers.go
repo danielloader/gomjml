@@ -1,7 +1,6 @@
 package components
 
 import (
-	"html"
 	"strconv"
 	"strings"
 )
@@ -153,6 +152,11 @@ func computeVMLPosition(posX, posY, _ string, repeat string) (originX, originY, 
 	return decX, decY, decX, decY
 }
 
+// htmlEscape escapes a background URL for an attribute as html.EscapeString
+// does, except for &: the parser keeps attribute values as written, so an & in
+// one already starts an entity or is bare, as MJML leaves it.
+var backgroundURLEscaper = strings.NewReplacer("<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;")
+
 func htmlEscape(s string) string {
-	return html.EscapeString(s)
+	return backgroundURLEscaper.Replace(s)
 }
