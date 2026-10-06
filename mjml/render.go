@@ -148,7 +148,7 @@ func RenderWithAST(mjmlContent string, opts ...RenderOption) (*RenderResult, err
 	if debugEnabled {
 		debug.DebugLog("mjml", "component-tree-start", "Creating component tree from AST")
 	}
-	component, err := CreateComponent(ast, renderOpts)
+	component, err := createExpandedComponent(ast, renderOpts)
 	if err != nil {
 		if debugEnabled {
 			debug.DebugLogError("mjml", "component-tree-error", "Failed to create component tree", err)
@@ -246,7 +246,7 @@ func RenderFromAST(ast *MJMLNode, opts ...RenderOption) (string, error) {
 		}
 	}
 
-	component, err := CreateComponent(ast, renderOpts)
+	component, err := createExpandedComponent(ast, renderOpts)
 	if err != nil {
 		return "", err
 	}
@@ -271,7 +271,7 @@ func NewFromAST(ast *MJMLNode, opts ...RenderOption) (Component, error) {
 		opt(renderOpts)
 	}
 
-	return CreateComponent(ast, renderOpts)
+	return createExpandedComponent(ast, renderOpts)
 }
 
 // normalizeGroupColumnClassOrder rewrites the mj-group column class ordering to match
